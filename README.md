@@ -8,12 +8,12 @@ sources, and writes a weekly newsletter plus JSON artifacts.
 ## Run
 
 ```bash
-cd /Users/assafkipnis/projects/competitive-analysis/plugins/kipi-core/kipi-mcp
+cd /Users/assafkipnis/projects/competitive-analysis
 
 PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
   --watchlist examples/competitive-intel/ai-builds-watchlist.yaml \
   --sources-config examples/competitive-intel/ai-live-sources.json \
-  --output-dir ../../../q-system/output \
+  --output-dir q-system/output \
   --query "AI agent eval harness MCP Claude Code" \
   --per-source-limit 5
 ```
@@ -37,6 +37,6 @@ Outputs land in:
 ## Verify
 
 ```bash
-cd /Users/assafkipnis/projects/competitive-analysis/plugins/kipi-core/kipi-mcp
+cd /Users/assafkipnis/projects/competitive-analysis
 PYTHONPATH=src uv run python -m pytest -q tests/test_competitive_intel.py
 ```
