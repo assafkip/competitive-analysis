@@ -1,9 +1,9 @@
 {
-  "_source": "Adapted from /Users/assafkipnis/projects/random-stuff-ideas/gtm/scripts/podcast/sources.json",
+  "_source": "Adapted from a local AI news ingestor source config.",
   "_notes": [
     "Keyless public sources only for the first reusable workflow.",
-    "Reddit uses /.rss with a browser UA, matching the random-stuff RCA fix.",
-    "X/Apify and NotebookLM/email delivery are intentionally not included here."
+    "Reddit uses /.rss with a browser UA.",
+    "X uses Apify when APIFY_TOKEN is present."
   ],
   "pool_size": 60,
   "sources": [

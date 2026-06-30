@@ -13,7 +13,7 @@ cd /Users/assafkipnis/projects/competitive-analysis
 PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
   --watchlist examples/competitive-intel/ai-builds-watchlist.yaml \
   --sources-config examples/competitive-intel/ai-live-sources.json \
-  --output-dir q-system/output \
+  --output-dir output \
   --query "AI agent eval harness MCP Claude Code" \
   --per-source-limit 5
 ```
@@ -21,7 +21,7 @@ PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
 Outputs land in:
 
 ```text
-/Users/assafkipnis/projects/competitive-analysis/q-system/output/competitive-intel/
+/Users/assafkipnis/projects/competitive-analysis/output/competitive-intel/
 ```
 
 ## Sources

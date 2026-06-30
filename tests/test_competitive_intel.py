@@ -20,6 +20,53 @@ from kipi_mcp.competitive_intel import (
 )
 
 
+def _ai_quality_watchlist(path: Path) -> Path:
+    return _write_yaml(
+        path,
+        {
+            "name": "AI Builds Radar",
+            "theme_keywords": {
+                "model releases": [
+                    "model release",
+                    "new model",
+                    "text-generation",
+                    "claude sonnet",
+                    "qwen",
+                    "glm",
+                ],
+                "new repos": ["open-source", "new repo", "github"],
+                "coding agents": ["coding agent", "claude code", "mcp", "ai agent"],
+            },
+            "theme_rules": {
+                "model releases": {
+                    "allow_sources": ["huggingface-ai", "simonwillison", "github", "reddit"],
+                    "deny_sources": ["hacker-news"],
+                    "evidence_limit": 3,
+                    "source_weights": {
+                        "huggingface-ai": 5,
+                        "simonwillison": 4,
+                        "github": 3,
+                        "reddit": 2,
+                    },
+                },
+                "new repos": {
+                    "deny_sources": ["arxiv"],
+                    "evidence_limit": 3,
+                    "source_weights": {"github": 5, "hacker-news": 3, "x": 2},
+                },
+                "coding agents": {"evidence_limit": 3},
+            },
+            "entities": [
+                {"name": "GitHub Trending", "category": "repos", "sources": {"github": ["trending"]}},
+                {"name": "Hacker News AI Builders", "category": "community", "sources": {"hacker-news": ["show-hn"]}},
+                {"name": "Hugging Face Trending", "category": "models", "sources": {"huggingface": ["trending"]}},
+                {"name": "AI Research Writers", "category": "research", "sources": {"rss": ["simonwillison"]}},
+                {"name": "AI Research Papers", "category": "research", "sources": {"arxiv": ["cs-ai"]}},
+            ],
+        },
+    )
+
+
 def _write_yaml(path: Path, payload: dict) -> Path:
     path.write_text(yaml.safe_dump(payload, sort_keys=False))
     return path
@@ -163,6 +210,191 @@ def test_records_validation_rejects_missing_text(tmp_path):
 
     with pytest.raises(ValueError, match="records\\[0\\].text"):
         load_records(records_path)
+
+
+def test_output_quality_cleans_html_and_entities_before_rendering(tmp_path):
+    watchlist = load_watchlist(_ai_quality_watchlist(tmp_path / "watchlist.yaml"))
+    records = load_records(
+        _write_json(
+            tmp_path / "records.json",
+            [
+                {
+                    "entity": "Hugging Face Trending",
+                    "source": "huggingface-ai",
+                    "url": "https://huggingface.co/zai-org/GLM-5.2",
+                    "text": "Trending model: zai-org/GLM-5.2 text-generation",
+                },
+                {
+                    "entity": "AI Research Writers",
+                    "source": "simonwillison",
+                    "url": "https://example.com/claude-sonnet-5",
+                    "text": "<p>What&#x27;s new in Claude Sonnet 5</p>",
+                },
+            ],
+        )
+    )
+
+    report = build_report(watchlist, records, week="2026-W27")
+    newsletter = render_newsletter(report)
+
+    assert "<p>" not in newsletter
+    assert "&#x27;" not in newsletter
+    assert "What's new in Claude Sonnet 5" in newsletter
+
+
+def test_theme_rules_prevent_false_model_and_new_repo_matches(tmp_path):
+    watchlist = load_watchlist(_ai_quality_watchlist(tmp_path / "watchlist.yaml"))
+    records = load_records(
+        _write_json(
+            tmp_path / "records.json",
+            [
+                {
+                    "entity": "Hugging Face Trending",
+                    "source": "huggingface-ai",
+                    "url": "https://huggingface.co/zai-org/GLM-5.2",
+                    "text": "Trending model: zai-org/GLM-5.2 text-generation",
+                },
+                {
+                    "entity": "AI Research Writers",
+                    "source": "simonwillison",
+                    "url": "https://example.com/claude-sonnet-5",
+                    "text": "Claude Sonnet 5 is the new default model in Claude Code.",
+                },
+                {
+                    "entity": "Hacker News AI Builders",
+                    "source": "hacker-news",
+                    "url": "https://sigmashake.com",
+                    "text": "Show HN: A policy gate that runs before your AI coding agent tool calls.",
+                },
+                {
+                    "entity": "AI Research Papers",
+                    "source": "arxiv",
+                    "url": "https://arxiv.org/abs/2606.30645v1",
+                    "text": "Reconstructed scenes for humanoid robotics.",
+                },
+            ],
+        )
+    )
+
+    report = build_report(watchlist, records, week="2026-W27")
+
+    model_move = next(move for move in report.market_moves if move.theme == "model releases")
+    assert model_move.entities == ["AI Research Writers", "Hugging Face Trending"]
+    assert all(record.source != "hacker-news" for record in model_move.records)
+    assert all(record.source != "arxiv" for move in report.market_moves for record in move.records)
+
+
+def test_newsletter_caps_evidence_and_explains_why_it_matters(tmp_path):
+    watchlist = load_watchlist(_ai_quality_watchlist(tmp_path / "watchlist.yaml"))
+    records = load_records(
+        _write_json(
+            tmp_path / "records.json",
+            [
+                {
+                    "entity": "Hugging Face Trending",
+                    "source": "huggingface-ai",
+                    "url": f"https://huggingface.co/model-{idx}",
+                    "text": f"Trending model: model-{idx} text-generation",
+                }
+                for idx in range(5)
+            ]
+            + [
+                {
+                    "entity": "AI Research Writers",
+                    "source": "simonwillison",
+                    "url": "https://example.com/claude-sonnet-5",
+                    "text": "Claude Sonnet 5 is a new model release.",
+                }
+            ],
+        )
+    )
+
+    report = build_report(watchlist, records, week="2026-W27")
+    move = next(move for move in report.market_moves if move.theme == "model releases")
+    newsletter = render_newsletter(report)
+
+    assert move.evidence_count == 6
+    assert len(move.records) == 3
+    assert "Why this matters:" in newsletter
+    assert "multiple independent sources" in newsletter
+
+
+def test_source_weights_rank_higher_quality_evidence_first(tmp_path):
+    watchlist = load_watchlist(_ai_quality_watchlist(tmp_path / "watchlist.yaml"))
+    records = load_records(
+        _write_json(
+            tmp_path / "records.json",
+            [
+                {
+                    "entity": "AI Research Writers",
+                    "source": "simonwillison",
+                    "url": "https://example.com/sonnet",
+                    "text": "Claude Sonnet 5 is a new model release.",
+                },
+                {
+                    "entity": "Hugging Face Trending",
+                    "source": "huggingface-ai",
+                    "url": "https://huggingface.co/qwen",
+                    "text": "Trending model: Qwen-AgentWorld text-generation",
+                },
+                {
+                    "entity": "GitHub Trending",
+                    "source": "github",
+                    "url": "https://github.com/example/model-wrapper",
+                    "text": "New model wrapper repo for Claude Sonnet.",
+                },
+            ],
+        )
+    )
+
+    report = build_report(watchlist, records, week="2026-W27")
+    move = next(move for move in report.market_moves if move.theme == "model releases")
+
+    assert move.records[0].source == "huggingface-ai"
+    assert move.records[1].source == "simonwillison"
+    assert move.score > 0
+
+
+def test_evidence_cap_preserves_entity_diversity_before_filling(tmp_path):
+    watchlist = load_watchlist(_ai_quality_watchlist(tmp_path / "watchlist.yaml"))
+    records = load_records(
+        _write_json(
+            tmp_path / "records.json",
+            [
+                {
+                    "entity": "Hugging Face Trending",
+                    "source": "huggingface-ai",
+                    "url": f"https://huggingface.co/model-{idx}",
+                    "text": f"Trending model: model-{idx} text-generation",
+                }
+                for idx in range(5)
+            ]
+            + [
+                {
+                    "entity": "AI Research Writers",
+                    "source": "simonwillison",
+                    "url": "https://example.com/sonnet",
+                    "text": "Claude Sonnet 5 is a new model release.",
+                },
+                {
+                    "entity": "GitHub Trending",
+                    "source": "github",
+                    "url": "https://github.com/example/model-wrapper",
+                    "text": "New model wrapper repo for Claude Sonnet.",
+                },
+            ],
+        )
+    )
+
+    report = build_report(watchlist, records, week="2026-W27")
+    move = next(move for move in report.market_moves if move.theme == "model releases")
+
+    assert len(move.records) == 3
+    assert {record.entity for record in move.records} == {
+        "Hugging Face Trending",
+        "AI Research Writers",
+        "GitHub Trending",
+    }
 
 
 def test_normalize_raw_records_maps_ai_build_chatter(tmp_path):

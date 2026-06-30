@@ -5,6 +5,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
+from html import unescape
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -35,6 +36,7 @@ class Watchlist:
     entities: list[WatchedEntity]
     theme_keywords: dict[str, list[str]]
     min_entities_for_move: int = 2
+    theme_rules: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,8 @@ class MarketMove:
     entities: list[str]
     evidence_count: int
     records: list[HarvestRecord]
+    score: float = 0.0
+    why_this_matters: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,12 +133,18 @@ def load_watchlist(path: str | Path) -> Watchlist:
     min_entities = int(payload.get("min_entities_for_move", 2))
     if min_entities < 2:
         raise ValueError("watchlist.min_entities_for_move must be >= 2")
+    theme_rules = payload.get("theme_rules", {})
+    if theme_rules is None:
+        theme_rules = {}
+    if not isinstance(theme_rules, dict):
+        raise ValueError("watchlist.theme_rules must be a mapping")
 
     return Watchlist(
         name=str(payload.get("name") or "Weekly").strip(),
         entities=entities,
         theme_keywords=normalized_themes,
         min_entities_for_move=min_entities,
+        theme_rules={str(theme): rule for theme, rule in theme_rules.items() if isinstance(rule, dict)},
     )
 
 
@@ -167,7 +177,7 @@ def load_records(path: str | Path) -> list[HarvestRecord]:
             HarvestRecord(
                 entity=entity.strip(),
                 source=source.strip(),
-                text=text.strip(),
+                text=_clean_text(text),
                 source_id=str(raw.get("source_id") or raw.get("id") or ""),
                 url=str(raw.get("url") or raw.get("link") or ""),
                 published_at=str(raw.get("published_at") or raw.get("created_at") or ""),
@@ -259,29 +269,42 @@ def build_report(
 
     records_by_theme: dict[str, list[HarvestRecord]] = {}
     for theme, keywords in watchlist.theme_keywords.items():
+        rule = watchlist.theme_rules.get(theme, {})
         records_by_theme[theme] = [
             record
             for record in watched_records
-            if _matches_any_keyword(record.text, keywords)
+            if _record_matches_theme(record, keywords, rule)
         ]
 
     market_moves: list[MarketMove] = []
     for theme, theme_records in records_by_theme.items():
         entities = sorted({record.entity for record in theme_records})
         if len(entities) >= watchlist.min_entities_for_move:
+            rule = watchlist.theme_rules.get(theme, {})
+            ranked_records = sorted(
+                theme_records,
+                key=lambda record: (
+                    -_record_quality_score(record, rule),
+                    record.published_at,
+                    record.entity,
+                    record.source_id,
+                ),
+            )
+            evidence_limit = int(rule.get("evidence_limit") or 5)
+            capped_records = _select_evidence_records(ranked_records, evidence_limit)
+            score = sum(_record_quality_score(record, rule) for record in ranked_records)
             market_moves.append(
                 MarketMove(
                     theme=theme,
                     entities=entities,
                     evidence_count=len(theme_records),
-                    records=sorted(
-                        theme_records,
-                        key=lambda record: (record.published_at, record.entity, record.source_id),
-                    ),
+                    records=capped_records,
+                    score=round(score, 2),
+                    why_this_matters=_why_this_matters(theme, entities, len(theme_records), ranked_records),
                 )
             )
 
-    market_moves.sort(key=lambda move: (-len(move.entities), -move.evidence_count, move.theme))
+    market_moves.sort(key=lambda move: (-move.score, -len(move.entities), -move.evidence_count, move.theme))
 
     entity_activity: list[EntityActivity] = []
     for entity in watchlist.entities:
@@ -335,6 +358,8 @@ def render_newsletter(report: IntelReport) -> str:
                     ),
                     "",
                     f"Evidence records: {move.evidence_count}",
+                    "",
+                    f"Why this matters: {move.why_this_matters}",
                     "",
                 ]
             )
@@ -1047,7 +1072,7 @@ def _extract_text(summary: dict[str, Any], raw: dict[str, Any]) -> str:
         if isinstance(body, str) and body.strip():
             parts.append(body.strip())
 
-    return " ".join(dict.fromkeys(parts))
+    return _clean_text(" ".join(dict.fromkeys(parts)))
 
 
 def _extract_engagement(summary: dict[str, Any]) -> dict[str, Any]:
@@ -1074,7 +1099,93 @@ def _string_list(value: Any, field_name: str) -> list[str]:
 
 def _matches_any_keyword(text: str, keywords: list[str]) -> bool:
     lowered = text.lower()
-    return any(keyword in lowered for keyword in keywords)
+    return any(_contains_phrase(lowered, keyword) for keyword in keywords)
+
+
+def _record_matches_theme(record: HarvestRecord, keywords: list[str], rule: dict[str, Any]) -> bool:
+    allow_sources = set(rule.get("allow_sources") or [])
+    deny_sources = set(rule.get("deny_sources") or [])
+    if allow_sources and record.source not in allow_sources:
+        return False
+    if deny_sources and record.source in deny_sources:
+        return False
+    deny_entities = set(rule.get("deny_entities") or [])
+    if deny_entities and record.entity in deny_entities:
+        return False
+    return _matches_any_keyword(record.text, keywords)
+
+
+def _contains_phrase(lowered_text: str, keyword: str) -> bool:
+    lowered_keyword = keyword.lower().strip()
+    if not lowered_keyword:
+        return False
+    if re.search(r"[a-z0-9]", lowered_keyword):
+        pattern = r"(?<![a-z0-9])" + re.escape(lowered_keyword) + r"(?![a-z0-9])"
+        return re.search(pattern, lowered_text) is not None
+    return lowered_keyword in lowered_text
+
+
+def _record_quality_score(record: HarvestRecord, rule: dict[str, Any]) -> float:
+    weights = rule.get("source_weights") or {}
+    score = float(weights.get(record.source, 1.0))
+    if record.url:
+        score += 0.2
+    for key in ("stars", "score", "likes", "reposts", "comments", "views"):
+        value = record.engagement.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            score += min(2.0, value ** 0.25 / 4)
+            break
+    return score
+
+
+def _why_this_matters(
+    theme: str,
+    entities: list[str],
+    evidence_count: int,
+    records: list[HarvestRecord],
+) -> str:
+    source_count = len({record.source for record in records})
+    top_sources = ", ".join(sorted({record.source for record in records})[:3])
+    return (
+        f"{evidence_count} signals across {len(entities)} watched entities and "
+        f"{source_count} source types suggest {theme} shows up in multiple "
+        f"independent sources, not just one feed. Strongest sources: {top_sources}."
+    )
+
+
+def _select_evidence_records(records: list[HarvestRecord], evidence_limit: int) -> list[HarvestRecord]:
+    if evidence_limit <= 0:
+        return []
+    selected: list[HarvestRecord] = []
+    selected_keys: set[tuple[str, str, str]] = set()
+    seen_entities: set[str] = set()
+
+    for record in records:
+        key = (record.entity, record.source, record.url or record.source_id or record.text)
+        if record.entity in seen_entities or key in selected_keys:
+            continue
+        selected.append(record)
+        selected_keys.add(key)
+        seen_entities.add(record.entity)
+        if len(selected) >= evidence_limit:
+            return selected
+
+    for record in records:
+        key = (record.entity, record.source, record.url or record.source_id or record.text)
+        if key in selected_keys:
+            continue
+        selected.append(record)
+        selected_keys.add(key)
+        if len(selected) >= evidence_limit:
+            break
+    return selected
+
+
+def _clean_text(value: str) -> str:
+    text = unescape(str(value))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def _current_iso_week() -> str:
