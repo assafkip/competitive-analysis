@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+q-system/output/competitive-intel/
