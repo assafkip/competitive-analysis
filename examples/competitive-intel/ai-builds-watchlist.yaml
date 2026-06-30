@@ -1,0 +1,165 @@
+name: AI Builds Radar
+min_entities_for_move: 2
+theme_keywords:
+  agent memory:
+    - agent memory
+    - persistent context
+    - memory layer
+  eval harnesses:
+    - eval harness
+    - benchmark eval
+    - regression eval
+  local models:
+    - local model
+    - small model
+    - on-device
+  computer use:
+    - computer use
+    - browser agent
+    - desktop agent
+    - tool calls
+    - tool use
+  new repos:
+    - open-source
+    - new repo
+    - github
+  coding agents:
+    - coding agent
+    - claude code
+    - agentic coding
+    - mcp
+    - ai agent
+    - tool-using agent
+  model releases:
+    - model release
+    - new model
+    - text-generation
+    - text-to-image
+    - image-text-to-text
+    - gemini image
+    - gemini 3
+    - claude sonnet
+    - claude opus
+    - claude haiku
+    - qwen
+    - glm
+theme_rules:
+  agent memory:
+    evidence_limit: 4
+    source_weights:
+      github: 4
+      hacker-news: 3
+      x: 2
+      reddit: 2
+      simonwillison: 3
+  eval harnesses:
+    evidence_limit: 4
+    source_weights:
+      github: 4
+      hacker-news: 3
+      x: 2
+      reddit: 2
+      simonwillison: 3
+  local models:
+    evidence_limit: 4
+    allow_sources:
+      - huggingface-ai
+      - reddit
+      - simonwillison
+      - arxiv
+    source_weights:
+      huggingface-ai: 5
+      reddit: 2
+      simonwillison: 3
+      arxiv: 2
+  computer use:
+    evidence_limit: 4
+    source_weights:
+      github: 4
+      hacker-news: 3
+      x: 2
+      reddit: 2
+      simonwillison: 3
+  new repos:
+    evidence_limit: 4
+    deny_sources:
+      - arxiv
+    source_weights:
+      github: 5
+      hacker-news: 3
+      x: 2
+      simonwillison: 2
+  coding agents:
+    evidence_limit: 4
+    source_weights:
+      github: 4
+      hacker-news: 3
+      x: 2
+      reddit: 2
+      simonwillison: 3
+  model releases:
+    evidence_limit: 4
+    allow_sources:
+      - huggingface-ai
+      - simonwillison
+      - reddit
+    deny_sources:
+      - hacker-news
+      - arxiv
+      - x
+    source_weights:
+      huggingface-ai: 5
+      simonwillison: 4
+      reddit: 2
+entities:
+  - name: GitHub Trending
+    category: repos
+    sources:
+      github:
+        - trending
+        - ai-agents
+  - name: Reddit AI Builders
+    category: community
+    sources:
+      reddit:
+        - LocalLLaMA
+        - singularity
+        - artificial
+  - name: Hacker News AI Builders
+    category: community
+    sources:
+      hacker-news:
+        - show-hn
+        - ai-agents
+  - name: Builder Thread
+    category: builder
+    sources:
+      x:
+        - ai-builders
+        - agents
+  - name: AI Research Writers
+    category: research
+    sources:
+      substack:
+        - ai-research
+      medium:
+        - ai-engineering
+      rss:
+        - simonwillison
+        - ai-lab-feeds
+  - name: AI Research Papers
+    category: research
+    sources:
+      arxiv:
+        - cs-ai
+        - cs-lg
+  - name: Hugging Face Trending
+    category: models
+    sources:
+      huggingface:
+        - trending-models
+  - name: YouTube AI Builders
+    category: video
+    sources:
+      youtube:
+        - ai-builds
