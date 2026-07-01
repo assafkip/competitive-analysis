@@ -144,6 +144,7 @@ h3 {
 .railGroup,
 .runBox,
 .briefPanel,
+.audioPanel,
 .pipelinePanel,
 .signalMap,
 .movePanel,
@@ -157,6 +158,7 @@ h3 {
 .railGroup,
 .runBox,
 .briefPanel,
+.audioPanel,
 .pipelinePanel {
   padding: 14px;
 }
@@ -524,6 +526,23 @@ code {
   background: rgba(246, 247, 241, 0.06);
   color: var(--paper);
   font-size: 12px;
+}
+
+.audioPanel {
+  margin-bottom: 16px;
+}
+
+.audioPanel h2 {
+  margin-bottom: 12px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.audioPanel p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .pipelinePanel ol {

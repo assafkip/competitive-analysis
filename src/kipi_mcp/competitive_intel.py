@@ -429,21 +429,39 @@ def run_weekly_workflow(
     output_dir: str | Path,
     run_date: str | None = None,
     week: str | None = None,
+    podcast_digest: bool = False,
+    coverage_ledger_path: str | Path | None = None,
 ) -> IntelReport:
     stamp = run_date or date.today().isoformat()
     intel_dir = Path(output_dir) / "competitive-intel"
     normalized_path = intel_dir / f"{stamp}.records.json"
     newsletter_path = intel_dir / f"{stamp}.md"
     report_json_path = intel_dir / f"{stamp}.report.json"
+    podcast_path = intel_dir / f"{stamp}.podcast.txt"
 
-    normalize_raw_records(raw_records_path, output_path=normalized_path)
-    return run_workflow(
+    records = normalize_raw_records(raw_records_path, output_path=normalized_path)
+    if coverage_ledger_path:
+        from kipi_mcp.signal_core import filter_new_records
+
+        records, _dropped = filter_new_records(records, coverage_ledger_path, today=stamp)
+        normalized_path.write_text(json.dumps([asdict(record) for record in records], indent=2))
+
+    report = run_workflow(
         watchlist_path=watchlist_path,
         records_path=normalized_path,
         output_path=newsletter_path,
         report_json_path=report_json_path,
         week=week,
     )
+    if podcast_digest:
+        from kipi_mcp.signal_core import render_podcast_digest
+
+        podcast_path.write_text(render_podcast_digest(report, date=stamp))
+    if coverage_ledger_path:
+        from kipi_mcp.signal_core import commit_coverage
+
+        commit_coverage(coverage_ledger_path, records, date=stamp)
+    return report
 
 
 def run_collect_weekly_workflow(
@@ -455,6 +473,8 @@ def run_collect_weekly_workflow(
     per_source_limit: int = 5,
     sources_config_path: str | Path | None = None,
     collector: Any | None = None,
+    podcast_digest: bool = False,
+    coverage_ledger_path: str | Path | None = None,
 ) -> IntelReport:
     stamp = run_date or date.today().isoformat()
     intel_dir = Path(output_dir) / "competitive-intel"
@@ -474,6 +494,8 @@ def run_collect_weekly_workflow(
         output_dir=output_dir,
         run_date=stamp,
         week=week,
+        podcast_digest=podcast_digest,
+        coverage_ledger_path=coverage_ledger_path,
     )
 
 
@@ -490,6 +512,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--output-dir", required=True, help="Base output directory")
         parser.add_argument("--run-date", help="Output date, for example 2026-06-30")
         parser.add_argument("--week", help="Week label, for example 2026-W27")
+        parser.add_argument(
+            "--podcast-digest",
+            action="store_true",
+            help="Write a NotebookLM-ready podcast source brief",
+        )
+        parser.add_argument("--coverage-ledger", help="JSONL ledger for records already covered")
         args = parser.parse_args(args_list)
 
         run_weekly_workflow(
@@ -498,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             run_date=args.run_date,
             week=args.week,
+            podcast_digest=args.podcast_digest,
+            coverage_ledger_path=args.coverage_ledger,
         )
         return 0
 
@@ -511,6 +541,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--query", default="AI agent OR Claude Code OR MCP OR eval harness")
         parser.add_argument("--per-source-limit", type=int, default=5)
         parser.add_argument("--sources-config", help="Optional collector source config JSON")
+        parser.add_argument(
+            "--podcast-digest",
+            action="store_true",
+            help="Write a NotebookLM-ready podcast source brief",
+        )
+        parser.add_argument("--coverage-ledger", help="JSONL ledger for records already covered")
         args = parser.parse_args(args_list)
 
         run_collect_weekly_workflow(
@@ -521,6 +557,8 @@ def main(argv: list[str] | None = None) -> int:
             query=args.query,
             per_source_limit=args.per_source_limit,
             sources_config_path=args.sources_config,
+            podcast_digest=args.podcast_digest,
+            coverage_ledger_path=args.coverage_ledger,
         )
         return 0
 
@@ -601,6 +639,8 @@ def _infer_source(source_name: str, summary: dict[str, Any]) -> str:
         return "hacker-news"
     if "arxiv" in joined:
         return "arxiv"
+    if "huggingface" in joined:
+        return "huggingface-ai"
     if "twitter" in joined or source_name.lower().startswith("x-") or "x.com" in joined:
         return "x"
     if "youtube" in joined:
@@ -631,13 +671,15 @@ def _infer_entity(source_name: str, summary: dict[str, Any], source: str) -> str
         return "Hacker News AI Builders"
     if source == "arxiv":
         return "AI Research Papers"
+    if source == "huggingface-ai":
+        return "Hugging Face Trending"
     if source == "x":
         return "Builder Thread"
     if source == "youtube":
         return "YouTube AI Builders"
     if source == "linkedin":
         return "LinkedIn AI Builders"
-    if source in {"substack", "medium"}:
+    if source in {"substack", "medium", "simonwillison"}:
         return "AI Research Writers"
     return source_name or "Unknown Source"
 

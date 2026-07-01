@@ -5,6 +5,10 @@ Competitive analysis workflow for AI market intelligence.
 It collects public AI signals, normalizes them, detects repeated themes across
 sources, and writes a weekly newsletter plus JSON artifacts.
 
+The same run can also write a NotebookLM-ready podcast source brief. That lets a
+daily audio workflow use market-move analysis instead of reading a flat story
+list.
+
 ## Run
 
 ```bash
@@ -13,7 +17,9 @@ PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
   --sources-config examples/competitive-intel/ai-live-sources.json \
   --output-dir output \
   --query "AI agent eval harness MCP Claude Code" \
-  --per-source-limit 5
+  --per-source-limit 5 \
+  --podcast-digest \
+  --coverage-ledger output/competitive-intel/coverage.jsonl
 ```
 
 Outputs land in:
@@ -21,6 +27,13 @@ Outputs land in:
 ```text
 output/competitive-intel/
 ```
+
+Key files:
+
+- `YYYY-MM-DD.md` - weekly analyst brief
+- `YYYY-MM-DD.report.json` - structured market moves
+- `YYYY-MM-DD.podcast.txt` - NotebookLM source brief for a short audio episode
+- `coverage.jsonl` - repeat-blocking ledger for already-covered records
 
 ## Sources
 

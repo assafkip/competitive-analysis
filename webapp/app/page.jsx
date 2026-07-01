@@ -169,6 +169,7 @@ export default function Page() {
               <span><strong>45</strong> records scanned</span>
               <span><strong>{visibleMoves.length}</strong> moves</span>
               <span><strong>{visibleSignalCount}</strong> signals</span>
+              <span><strong>2</strong> outputs</span>
             </div>
           </header>
 
@@ -295,13 +296,23 @@ export default function Page() {
             </div>
           </section>
 
+          <section className="audioPanel" aria-label="Podcast digest preview">
+            <p className="eyebrow">Daily podcast</p>
+            <h2>Same evidence. Short audio brief.</h2>
+            <p>
+              The workflow now writes a NotebookLM source file from the market moves.
+              The podcast gets a throughline before it gets a script.
+            </p>
+            <code>2026-06-30.podcast.txt</code>
+          </section>
+
           <section className="pipelinePanel" aria-label="Workflow pipeline">
             <p className="eyebrow">Workflow</p>
             <ol>
               <li><span>Collect</span><p>Public repos, forums, RSS, models, papers, and X.</p></li>
-              <li><span>Normalize</span><p>One record schema with source, entity, text, URL, and engagement.</p></li>
+              <li><span>Block repeats</span><p>Coverage ledger drops records already used in prior briefs.</p></li>
               <li><span>Cluster</span><p>Theme rules, source weights, caps, and entity diversity.</p></li>
-              <li><span>Brief</span><p>Markdown and JSON output ready for a weekly send.</p></li>
+              <li><span>Ship</span><p>Markdown, JSON, and podcast source output from the same report.</p></li>
             </ol>
           </section>
         </aside>
