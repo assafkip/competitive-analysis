@@ -61,4 +61,19 @@ npm run dev
 
 The site opens at `http://localhost:3000` by default. It shows the analyst
 workspace: source filters, market-move clusters, evidence receipts, and the
-weekly brief preview.
+weekly brief preview. Use `Create source` in the Daily podcast panel to generate
+a NotebookLM-ready source brief from the visible market moves.
+
+## Morning heartbeat
+
+```bash
+bash scripts/install_morning_heartbeat.sh
+```
+
+That installs a local LaunchAgent for 7:45am. It runs `scripts/run_morning.sh`,
+writes fresh Competitive Analysis artifacts, writes `output/heartbeat/latest.json`,
+and keeps logs under `output/heartbeat/logs/`.
+
+The runner loads the podcast env file and the competitive-analysis env file.
+The test gate runs with live source tokens removed, then the collection step uses
+the live env. Tests stay fixture-only. Collection stays real.

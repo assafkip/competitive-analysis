@@ -545,6 +545,49 @@ code {
   line-height: 1.45;
 }
 
+.podcastActions {
+  display: grid;
+  grid-template-columns: 1fr 0.7fr 0.9fr;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+
+.podcastActions button {
+  min-height: 34px;
+  border: 1px solid rgba(23, 26, 24, 0.22);
+  border-radius: var(--radius);
+  background: var(--carbon);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.podcastActions button:disabled {
+  cursor: not-allowed;
+  background: var(--paper-2);
+  color: var(--muted);
+}
+
+.microStatus {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.podcastOutput {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcf6;
+  color: var(--carbon);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 10px;
+}
+
 .pipelinePanel ol {
   display: grid;
   gap: 13px;

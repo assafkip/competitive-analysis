@@ -95,6 +95,8 @@ export default function Page() {
     Object.fromEntries(sources.map((source) => [source.id, source.active])),
   );
   const [selectedId, setSelectedId] = useState("model-releases");
+  const [podcastDigest, setPodcastDigest] = useState("");
+  const [podcastStatus, setPodcastStatus] = useState("");
 
   const visibleMoves = useMemo(
     () => marketMoves.filter((move) => move.sources.some((source) => enabled[source])),
@@ -106,6 +108,36 @@ export default function Page() {
 
   function toggleSource(id) {
     setEnabled((current) => ({ ...current, [id]: !current[id] }));
+  }
+
+  function createPodcastDigest() {
+    const today = new Date().toISOString().slice(0, 10);
+    const digest = buildPodcastDigest(visibleMoves, today);
+    setPodcastDigest(digest);
+    setPodcastStatus("Podcast source ready");
+  }
+
+  async function copyPodcastDigest() {
+    if (!podcastDigest) return;
+    try {
+      await navigator.clipboard.writeText(podcastDigest);
+      setPodcastStatus("Copied");
+    } catch {
+      setPodcastStatus("Copy failed");
+    }
+  }
+
+  function downloadPodcastDigest() {
+    if (!podcastDigest) return;
+    const blob = new Blob([podcastDigest], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    const today = new Date().toISOString().slice(0, 10);
+    anchor.download = `competitive-analysis-${today}.podcast.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setPodcastStatus("Downloaded");
   }
 
   return (
@@ -303,7 +335,19 @@ export default function Page() {
               The workflow now writes a NotebookLM source file from the market moves.
               The podcast gets a throughline before it gets a script.
             </p>
-            <code>2026-06-30.podcast.txt</code>
+            <div className="podcastActions">
+              <button type="button" onClick={createPodcastDigest}>Create source</button>
+              <button type="button" onClick={copyPodcastDigest} disabled={!podcastDigest}>Copy</button>
+              <button type="button" onClick={downloadPodcastDigest} disabled={!podcastDigest}>Download</button>
+            </div>
+            {podcastStatus ? <p className="microStatus">{podcastStatus}</p> : null}
+            <textarea
+              className="podcastOutput"
+              value={podcastDigest}
+              readOnly
+              placeholder="Create source to generate the NotebookLM brief."
+              aria-label="Generated podcast source brief"
+            />
           </section>
 
           <section className="pipelinePanel" aria-label="Workflow pipeline">
@@ -319,4 +363,38 @@ export default function Page() {
       </section>
     </main>
   );
+}
+
+function buildPodcastDigest(moves, date) {
+  const lines = [
+    `AI market analyst source brief for ${date}.`,
+    "Audience: AI builders, AI consultants, threat intelligence professionals, AI startup founders, fraud consultants, and fractional leaders.",
+    "Use this as source material for a short audio brief. Explain what changed, why it matters, and which receipts support it.",
+    "",
+    "Part 1 - Market moves",
+    "",
+  ];
+
+  if (!moves.length) {
+    lines.push("Quiet stretch. No cross-source market move cleared the threshold.", "");
+  }
+
+  moves.forEach((move, index) => {
+    lines.push(
+      `${index + 1}. ${move.theme}`,
+      `Entities: ${move.entities.join(", ")}`,
+      `Evidence count: ${move.count}`,
+      `Why it matters: ${move.why}`,
+      "",
+    );
+  });
+
+  lines.push("Part 2 - Evidence receipts", "");
+  moves.forEach((move) => {
+    move.receipts.forEach((receipt, index) => {
+      lines.push(`${index + 1}. ${move.theme}`, receipt, `Source: ${move.sources.join(", ")}`, "");
+    });
+  });
+
+  return `${lines.join("\n").trim()}\n`;
 }
