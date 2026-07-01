@@ -654,6 +654,7 @@ def test_collect_ai_raw_records_from_public_sources_with_fake_fetchers(tmp_path)
         per_source_limit=1,
         fetch_json=fake_json,
         fetch_text=fake_text,
+        apify_token="",
     )
 
     assert output_path.exists()
