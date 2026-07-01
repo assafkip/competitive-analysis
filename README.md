@@ -8,8 +8,6 @@ sources, and writes a weekly newsletter plus JSON artifacts.
 ## Run
 
 ```bash
-cd /Users/assafkipnis/projects/competitive-analysis
-
 PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
   --watchlist examples/competitive-intel/ai-builds-watchlist.yaml \
   --sources-config examples/competitive-intel/ai-live-sources.json \
@@ -21,7 +19,7 @@ PYTHONPATH=src uv run kipi-competitive-intel collect-weekly \
 Outputs land in:
 
 ```text
-/Users/assafkipnis/projects/competitive-analysis/output/competitive-intel/
+output/competitive-intel/
 ```
 
 ## Sources
@@ -37,6 +35,17 @@ Outputs land in:
 ## Verify
 
 ```bash
-cd /Users/assafkipnis/projects/competitive-analysis
 PYTHONPATH=src uv run python -m pytest -q tests/test_competitive_intel.py
 ```
+
+## Site
+
+```bash
+cd webapp
+npm install
+npm run dev
+```
+
+The site opens at `http://localhost:3000` by default. It shows the analyst
+workspace: source filters, market-move clusters, evidence receipts, and the
+weekly brief preview.

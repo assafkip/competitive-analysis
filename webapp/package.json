@@ -1,0 +1,20 @@
+{
+  "name": "competitive-analysis-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Product site for the competitive-analysis AI market intelligence workflow.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.2.9",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}

@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 q-system/
 output/competitive-intel/
+node_modules/
+.next/
+dist/
