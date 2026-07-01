@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 from html import unescape
 from dataclasses import asdict, dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -16,6 +16,8 @@ import yaml
 
 
 USER_AGENT = "kipi-competitive-intel/1.0 (+https://ktlystlabs.com)"
+ARCTIC_BASE = "https://arctic-shift.photon-reddit.com"
+PULLPUSH_BASE = "https://api.pullpush.io"
 BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
@@ -758,7 +760,7 @@ def _collect_source(
     if source_type == "hackernews":
         return _collect_hackernews(source, query, limit, fetch_json)
     if source_type == "reddit_rss":
-        return _collect_reddit_rss(source, limit, fetch_text)
+        return _collect_reddit_rss(source, limit, fetch_json)
     if source_type == "rss":
         return _collect_rss(source, limit, fetch_text)
     if source_type == "huggingface":
@@ -843,30 +845,98 @@ def _collect_hackernews(
     return records
 
 
-def _collect_reddit_rss(source: dict[str, Any], limit: int, fetch_text: Any) -> list[dict[str, Any]]:
+def _collect_reddit_rss(source: dict[str, Any], limit: int, fetch_json: Any) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     subs = [str(sub).lstrip("/").removeprefix("r/") for sub in source.get("subreddits", [])]
+    after = (date.today() - timedelta(days=int(source.get("lookback_days", 35)))).isoformat()
+    per_sub = int(source.get("posts_per_sub") or source.get("per_sub") or limit)
     for sub in subs:
         if len(records) >= limit:
             break
-        xml = fetch_text(f"https://www.reddit.com/r/{sub}/hot/.rss", {"User-Agent": BROWSER_UA})
-        for entry in _parse_feed(xml):
+        for entry in _reddit_archive_posts(sub, after, per_sub, fetch_json):
             records.append(
                 _raw_record(
                     source_name=source["name"],
-                    record_key=entry.get("url") or entry.get("title") or "",
+                    record_key=entry.get("id") or entry.get("url") or entry.get("title") or "",
                     summary={
                         "subreddit": sub,
                         "title": entry.get("title") or "",
-                        "selftext": entry.get("summary") or "",
+                        "selftext": entry.get("selftext") or "",
                         "url": entry.get("url") or "",
                         "published_at": entry.get("published_at") or "",
+                        "score": entry.get("score") or 0,
+                        "comments": entry.get("comment_count") or 0,
                     },
                 )
             )
             if len(records) >= limit:
                 break
     return records
+
+
+def _reddit_archive_posts(subreddit: str, after: str, limit: int, fetch_json: Any) -> list[dict[str, Any]]:
+    try:
+        return [
+            post
+            for post in (_reddit_archive_post(item) for item in _archive_items(fetch_json(_arctic_posts_url(subreddit, after, limit))))
+            if post
+        ]
+    except Exception:
+        pass
+    try:
+        return [
+            post
+            for post in (_reddit_archive_post(item) for item in _archive_items(fetch_json(_pullpush_posts_url(subreddit, limit))))
+            if post
+        ]
+    except Exception:
+        return []
+
+
+def _archive_items(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        data = payload.get("data", [])
+        return data if isinstance(data, list) else []
+    return payload if isinstance(payload, list) else []
+
+
+def _arctic_posts_url(subreddit: str, after: str, limit: int) -> str:
+    query = urllib.parse.urlencode({"subreddit": subreddit, "after": after, "limit": limit, "sort": "desc"})
+    return f"{ARCTIC_BASE}/api/posts/search?{query}"
+
+
+def _pullpush_posts_url(subreddit: str, limit: int) -> str:
+    query = urllib.parse.urlencode({"subreddit": subreddit, "size": limit, "sort": "desc"})
+    return f"{PULLPUSH_BASE}/reddit/search/submission?{query}"
+
+
+def _reddit_archive_post(data: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    post_id = str(data.get("id") or "").strip()
+    title = str(data.get("title") or "").strip()
+    subreddit = str(data.get("subreddit") or "").strip()
+    if not post_id or not title or not subreddit:
+        return None
+    permalink = str(data.get("permalink") or "")
+    url = f"https://www.reddit.com{permalink}" if permalink else str(data.get("url") or "")
+    return {
+        "id": post_id,
+        "subreddit": subreddit,
+        "title": unescape(title),
+        "selftext": unescape(str(data.get("selftext") or "")),
+        "url": url,
+        "published_at": _epoch_to_iso(data.get("created_utc")),
+        "score": int(data.get("score") or data.get("ups") or 0),
+        "comment_count": int(data.get("num_comments") or 0),
+    }
+
+
+def _epoch_to_iso(value: Any) -> str:
+    try:
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    except (TypeError, ValueError, OSError):
+        return ""
 
 
 def _collect_rss(source: dict[str, Any], limit: int, fetch_text: Any) -> list[dict[str, Any]]:

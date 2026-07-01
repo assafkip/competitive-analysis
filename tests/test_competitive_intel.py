@@ -777,6 +777,59 @@ def test_collect_ai_raw_records_x_apify_skips_without_token(tmp_path):
     assert records == []
 
 
+def test_collect_ai_raw_records_reddit_uses_arctic_with_pullpush_fallback(tmp_path):
+    config_path = _write_json(
+        tmp_path / "sources.json",
+        {
+            "sources": [
+                {
+                    "enabled": True,
+                    "type": "reddit_rss",
+                    "name": "reddit-ai-builds",
+                    "subreddits": ["ClaudeCode"],
+                    "limit": 2,
+                    "lookback_days": 35,
+                }
+            ]
+        },
+    )
+    requested_urls = []
+
+    def fake_json(url: str) -> dict:
+        requested_urls.append(url)
+        if "arctic-shift.photon-reddit.com/api/posts/search" in url:
+            raise RuntimeError("arctic blocked")
+        assert "api.pullpush.io/reddit/search/submission" in url
+        return {
+            "data": [
+                {
+                    "id": "rd-1",
+                    "subreddit": "ClaudeCode",
+                    "author": "builder",
+                    "title": "MCP eval harness launch",
+                    "selftext": "New agent eval harness pattern.",
+                    "permalink": "/r/ClaudeCode/comments/rd1/mcp_eval_harness/",
+                    "score": 42,
+                    "num_comments": 7,
+                    "created_utc": 1782900000,
+                }
+            ]
+        }
+
+    records = collect_ai_raw_records(
+        sources_config_path=config_path,
+        fetch_json=fake_json,
+        fetch_text=lambda *_: pytest.fail("reddit collector must not use Reddit RSS"),
+    )
+
+    assert len(records) == 1
+    assert records[0]["record_key"] == "rd-1"
+    assert records[0]["summary"]["subreddit"] == "ClaudeCode"
+    assert records[0]["summary"]["score"] == 42
+    assert requested_urls[0].startswith("https://arctic-shift.photon-reddit.com/api/posts/search?")
+    assert requested_urls[1].startswith("https://api.pullpush.io/reddit/search/submission?")
+
+
 def test_collect_weekly_workflow_collects_then_writes_newsletter(tmp_path):
     watchlist_path = _write_yaml(
         tmp_path / "ai-watchlist.yaml",
