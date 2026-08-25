@@ -1,0 +1,5 @@
+# competitive-analysis
+
+> One command runs collect-weekly over a watchlist YAML and source config, writing JSON artifacts and coverage ledgers alongside the digest.
+
+
