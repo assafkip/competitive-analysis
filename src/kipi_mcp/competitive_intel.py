@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import urllib.parse
 import urllib.request
 from html import unescape
 from dataclasses import asdict, dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -15,7 +16,20 @@ from xml.etree import ElementTree
 import yaml
 
 
+# THE TRANSPORT IS VENDORED, not imported from the fleet. This repository is
+# published standalone, so a fresh clone has no plugins/ directory and importing
+# a shared module from one would crash for everyone who cloned it. See
+# reddit_arctic.py for the full note and the upstream pointer.
+from kipi_mcp import reddit_arctic as _REDDIT
+
+# Restored: this was defined beside the old inline Arctic constants and went out
+# with them when the transport moved. `_fetch_json` and `_post_json` both read
+# it, so its absence turned every HTTP call in this module into a NameError that
+# the Reddit path then reported as "both mirrors refused".
 USER_AGENT = "kipi-competitive-intel/1.0 (+https://ktlystlabs.com)"
+ARCTIC_BASE = _REDDIT.ARCTIC_BASE
+PULLPUSH_BASE = _REDDIT.PULLPUSH_BASE
+RedditFetchFailed = _REDDIT.RedditFetchFailed
 BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
@@ -247,7 +261,16 @@ def collect_ai_raw_records(
                     apify_token=token,
                 )
             )
-        except Exception:
+        except Exception as exc:
+            # NAMED, not swallowed. The bare `continue` that used to sit here is
+            # the reason the transport's raise would otherwise be pointless: a
+            # source that died and a source with nothing new produced the same
+            # empty harvest, and the run looked healthy either way. One source
+            # still must not kill the batch, so this stays a continue. It just
+            # says what it lost.
+            print("[competitive-intel] source %r failed: %s: %s"
+                  % (source.get("name") or source.get("type"),
+                     type(exc).__name__, exc), file=sys.stderr)
             continue
 
     raw_records = _dedupe_raw_records(raw_records)[: int(config.get("pool_size", 60))]
@@ -758,7 +781,7 @@ def _collect_source(
     if source_type == "hackernews":
         return _collect_hackernews(source, query, limit, fetch_json)
     if source_type == "reddit_rss":
-        return _collect_reddit_rss(source, limit, fetch_text)
+        return _collect_reddit_rss(source, limit, fetch_json)
     if source_type == "rss":
         return _collect_rss(source, limit, fetch_text)
     if source_type == "huggingface":
@@ -843,30 +866,92 @@ def _collect_hackernews(
     return records
 
 
-def _collect_reddit_rss(source: dict[str, Any], limit: int, fetch_text: Any) -> list[dict[str, Any]]:
+def _collect_reddit_rss(source: dict[str, Any], limit: int, fetch_json: Any) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     subs = [str(sub).lstrip("/").removeprefix("r/") for sub in source.get("subreddits", [])]
+    after = (date.today() - timedelta(days=int(source.get("lookback_days", 35)))).isoformat()
+    per_sub = int(source.get("posts_per_sub") or source.get("per_sub") or limit)
     for sub in subs:
         if len(records) >= limit:
             break
-        xml = fetch_text(f"https://www.reddit.com/r/{sub}/hot/.rss", {"User-Agent": BROWSER_UA})
-        for entry in _parse_feed(xml):
+        for entry in _reddit_archive_posts(sub, after, per_sub, fetch_json):
             records.append(
                 _raw_record(
                     source_name=source["name"],
-                    record_key=entry.get("url") or entry.get("title") or "",
+                    record_key=entry.get("id") or entry.get("url") or entry.get("title") or "",
                     summary={
                         "subreddit": sub,
                         "title": entry.get("title") or "",
-                        "selftext": entry.get("summary") or "",
+                        "selftext": entry.get("selftext") or "",
                         "url": entry.get("url") or "",
                         "published_at": entry.get("published_at") or "",
+                        "score": entry.get("score") or 0,
+                        "comments": entry.get("comment_count") or 0,
                     },
                 )
             )
             if len(records) >= limit:
                 break
     return records
+
+
+def _reddit_archive_posts(subreddit: str, after: str, limit: int, fetch_json: Any) -> list[dict[str, Any]]:
+    """Arctic first, PullPush second, RAISE if both refuse.
+
+    The raise is the behaviour change. This function used to return [] there,
+    which made a dead mirror and a quiet subreddit the same value forever after.
+    `collect_ai_raw_records` now names the source it lost instead of continuing
+    in silence.
+
+    `fetch_json` is passed straight through as the transport's `_get` seam, so
+    every existing test double keeps working.
+    """
+    raw, _mirror = _REDDIT.fetch_posts(subreddit, limit=limit, after=after,
+                                       _get=fetch_json)
+    return [post for post in (_reddit_archive_post(item) for item in raw) if post]
+
+
+def _archive_items(payload: Any) -> list[dict[str, Any]]:
+    """Kept as a delegate. It had callers and its own tests; the unwrapping rule
+    itself now lives once, in the transport."""
+    return _REDDIT._items(payload)
+
+
+def _arctic_posts_url(subreddit: str, after: str, limit: int) -> str:
+    return _REDDIT.arctic_url(subreddit, limit, after=after)
+
+
+def _pullpush_posts_url(subreddit: str, limit: int) -> str:
+    return _REDDIT.pullpush_url(subreddit, limit)
+
+
+def _reddit_archive_post(data: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    post_id = str(data.get("id") or "").strip()
+    title = str(data.get("title") or "").strip()
+    subreddit = str(data.get("subreddit") or "").strip()
+    if not post_id or not title or not subreddit:
+        return None
+    permalink = str(data.get("permalink") or "")
+    url = f"https://www.reddit.com{permalink}" if permalink else str(data.get("url") or "")
+    return {
+        "id": post_id,
+        "subreddit": subreddit,
+        "title": unescape(title),
+        "selftext": unescape(str(data.get("selftext") or "")),
+        "url": url,
+        "published_at": _epoch_to_iso(data.get("created_utc")),
+        "score": int(data.get("score") or data.get("ups") or 0),
+        "comment_count": int(data.get("num_comments") or 0),
+    }
+
+
+def _epoch_to_iso(value: Any) -> str:
+    try:
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    except (TypeError, ValueError, OSError):
+        return ""
 
 
 def _collect_rss(source: dict[str, Any], limit: int, fetch_text: Any) -> list[dict[str, Any]]:
