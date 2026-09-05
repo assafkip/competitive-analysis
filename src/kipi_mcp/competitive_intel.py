@@ -16,39 +16,17 @@ from xml.etree import ElementTree
 import yaml
 
 
-def _load_reddit_transport():
-    """Walk up to the vendored `plugins/kipi-core` and import the transport.
+# THE TRANSPORT IS VENDORED, not imported from the fleet. This repository is
+# published standalone, so a fresh clone has no plugins/ directory and importing
+# a shared module from one would crash for everyone who cloned it. See
+# reddit_arctic.py for the full note and the upstream pointer.
+from kipi_mcp import reddit_arctic as _REDDIT
 
-    A relative parents[N] would be right in this repo's src/ layout and wrong in
-    every other caller's, which is the failure `voiceloop/voice_ref.py` records:
-    a caller that does not travel with its engine is wired on one machine only.
-    """
-    import sys as _sys
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        for cand in (parent / "plugins" / "kipi-core", parent):
-            if cand.name == "kipi-core" or cand.parent.name == "plugins":
-                if (cand / "reddit_arctic").is_dir():
-                    if str(cand) not in _sys.path:
-                        _sys.path.insert(0, str(cand))
-                    from reddit_arctic import transport
-                    return transport
-    raise RuntimeError(
-        "no plugins/kipi-core/reddit_arctic above %s; the kipi updater has not "
-        "run in this instance" % here)
-
-
-
+# Restored: this was defined beside the old inline Arctic constants and went out
+# with them when the transport moved. `_fetch_json` and `_post_json` both read
+# it, so its absence turned every HTTP call in this module into a NameError that
+# the Reddit path then reported as "both mirrors refused".
 USER_AGENT = "kipi-competitive-intel/1.0 (+https://ktlystlabs.com)"
-# THE REDDIT TRANSPORT IS NOT DEFINED HERE ANY MORE (2026-09-04, founder-directed
-# "this must be the only way we scrape reddit"). It lives once, in the kipi-core
-# plugin, and this module is a caller. Before the move there were two copies of
-# the same Arctic Shift fetch with OPPOSITE failure semantics: q-consult's raised
-# on a total refusal, this one returned [], so here a dead mirror and a quiet
-# subreddit were the same value and nothing downstream could tell them apart
-# (sp-a5461e0a). The copy that swallowed is the one that shipped to every
-# instance.
-_REDDIT = _load_reddit_transport()
 ARCTIC_BASE = _REDDIT.ARCTIC_BASE
 PULLPUSH_BASE = _REDDIT.PULLPUSH_BASE
 RedditFetchFailed = _REDDIT.RedditFetchFailed

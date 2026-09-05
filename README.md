@@ -39,11 +39,23 @@ Key files:
 
 - GitHub repo search
 - Hacker News
-- Reddit RSS
+- Reddit, via the Arctic Shift archive mirror
 - RSS feeds
 - Hugging Face trending models
 - arXiv
 - X via Apify when `APIFY_TOKEN` is present
+
+Reddit needs no token and no login. It reads **Arctic Shift**, a free archive
+mirror, with PullPush as a fallback. The source type is still called
+`reddit_rss` in `sources.json` so existing configs keep working, but nothing here
+reads an RSS feed any more: `www.reddit.com` throttles those hard enough that 3s
+pacing returned 429 on 11 of 12 requests.
+
+A refused read RAISES rather than returning an empty list, and that is
+deliberate. An empty list is what a quiet subreddit looks like, so returning it
+for a failure makes a dead mirror and a boring week the same value. One dead
+subreddit is skipped and named; every subreddit failing stops the run rather
+than writing a clean-looking harvest with nothing in it.
 
 ## Verify
 
